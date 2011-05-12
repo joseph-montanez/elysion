@@ -1020,8 +1020,14 @@ end;
 procedure TelWindow.TakeScreenshot(Filename: String);
 var
   tmpSurface: PSDL_Surface;
+  flippedSurface: PSDL_Surface;
   rmask, gmask, bmask, amask: Uint32;
-  SBits: Integer;
+  SBits, x, y, ry: Integer;
+  pixel: Longword;
+  flippedPixel: ^Longword;
+  fmt: PSDL_PixelFormat;
+  r, g, b: Byte;
+  color: Integer;
 begin
   Filename := Filename + IntToString(fScreenShotCounter, true, 3);
 
@@ -1047,19 +1053,42 @@ begin
   end;
 
   tmpSurface := SDL_CreateRGBSurface(SDL_SWSURFACE, Self.Width, Self.Height, 24, rmask, gmask, bmask, amask);
+  flippedSurface := SDL_CreateRGBSurface(SDL_SWSURFACE, Self.Width, Self.Height, 24, rmask, gmask, bmask, amask);
 
   if not Assigned(tmpSurface) then Exit;
 
   SDL_LockSurface(tmpSurface);
+  SDL_LockSurface(flippedSurface);
 
-  //glReadPixels(0, 0, Self.Width, Self.Height, GL_BGR, GL_UNSIGNED_BYTE, tmpSurface^.pixels);
   glReadPixels(0, 0, Self.Width, Self.Height, GL_RGB, GL_UNSIGNED_BYTE, tmpSurface^.pixels);
-
+  
+  { TODO: Flip the image, OpenGL to SDL has inverses y-axis. I can flip in 
+    OpenGL or SDL, but OpenGL wasn't working right. Also looked at SDL_gfx, 
+    but it only seems rotate, even with inverted zoom coordinates }
+  for x := 0 to flippedSurface^.w - 1 do
+  begin
+    for y := 0 to flippedSurface^.h - 1 do
+    begin
+      fmt := tmpSurface^.format;
+      { Flip the y-axis }
+      ry := flippedSurface^.h - y;
+      { Get pixel and color }
+      pixel := SDL_GetPixel(tmpSurface, y, x);
+      SDL_GetRGB(pixel, fmt, @r, @g, @b);
+      color := SDL_MapRGB(fmt, r, g, b);
+      
+      { This seems to segment fault when the color is too high > 65536 }
+      SDL_PutPixel(flippedSurface, ry, x, color);
+    end;  
+  end;
+  
   SDL_UnlockSurface(tmpSurface);
-
-  SDL_SaveBMP(tmpSurface, PChar(Filename));
+  SDL_UnlockSurface(flippedSurface);
+  
+  SDL_SaveBMP(flippedSurface, PChar(Filename));
 
   SDL_FreeSurface(tmpSurface);
+  SDL_FreeSurface(flippedSurface);
 
   fScreenShotCounter := fScreenShotCounter + 1;
 end;
